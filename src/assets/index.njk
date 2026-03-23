@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Localizations Editor</title>
+
+    <style>{{ styles }}</style>
+</head>
+<body>
+    <table>
+        <tr>
+            <th><div class="h-resizable">Key</div></th>
+            {% for lang in languages %}
+                <th><div class="h-resizable">{{ lang }}</div></th>
+            {% endfor %}
+        </tr>
+
+        {% for key, translations in translationsMap %}
+            <tr>
+                <td>{{ key }}</td>
+                {% for lang in languages %}
+                    <td><input class="label-editor" value="{{ translations.get(lang) }}"></input></td>
+                {% endfor %}
+            </tr>
+        {% endfor %}
+    </table>
+
+</body>
+
+<script>
+    const vscode = window.acquireVsCodeApi();
+
+    var labelEditors = document.querySelectorAll('.label-editor');
+
+    labelEditors.forEach(editor => {
+        let originalValue;
+
+        editor.addEventListener('focus', (event) => {
+            let target = event.target.parentElement;
+
+            originalValue = event.target.value;
+
+            let floatingBtns = document.createElement('div');
+            floatingBtns.id = 'action-buttons';
+            floatingBtns.style.left = target.style.right;
+            floatingBtns.style.top = target.style.bottom;
+            target.appendChild(floatingBtns);
+
+            let cancelBtn = document.createElement('button');
+            cancelBtn.classList.add('cancel-btn');
+            cancelBtn.innerHTML = '✗';
+            floatingBtns.appendChild(cancelBtn);
+
+            cancelBtn.onclick = (clickEvent) => {
+                event.target.value = originalValue;
+                hideActionButtons();
+            };
+
+            let okBtn = document.createElement('button');
+            okBtn.classList.add('ok-btn');
+            okBtn.innerHTML = '✓';
+            floatingBtns.appendChild(okBtn);
+
+            okBtn.onclick = onAcceptClick;
+        });
+
+        editor.addEventListener('blur', (blurEvent) => {
+            if(blurEvent.relatedTarget && 
+                (blurEvent.relatedTarget.classList.contains('cancel-btn') || blurEvent.relatedTarget.classList.contains('ok-btn'))) {
+                return;
+            }
+
+            // TODO: Perform any other cancel action here
+            event.target.value = originalValue;
+            hideActionButtons();
+        });
+    });
+
+    function onAcceptClick(event) {
+        let target = event.target.parentElement.parentElement;
+        let input = target.querySelector('.label-editor');
+        let value = input.value;
+
+        // Send the value to the extension
+        vscode.postMessage({ 
+            command: 'updateKey',
+            key: target.parentElement.querySelector('td').innerText,
+            lang: input.parentElement.parentElement.querySelector('th').innerText,
+            value: value
+        });
+
+        hideActionButtons();
+    }
+
+    function hideActionButtons() {
+        let floatingBtns = document.querySelector('#action-buttons');
+
+        if (floatingBtns) {
+            floatingBtns.parentElement.removeChild(floatingBtns);
+        }
+    }
+
+    function log(text) {
+        vscode.postMessage({ command: 'alert', text: text });
+    } 
+</script>
+</html>

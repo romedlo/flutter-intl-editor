@@ -1,0 +1,50 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-editorForeground);
+  background-color: var(--vscode-editor-background);
+  padding-bottom: 60px; /* Added for the bottom toolbar */
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-editorForeground);
+}
+
+th, td {
+  padding: 8px 12px;
+  border: 1px solid var(--vscode-editorWidget-border);
+  text-align: left;
+  vertical-align: middle;
+  cursor: pointer; /* Indicate that cells are clickable */
+}
+
+th {
+  background-color: var(--vscode-sideBar-background);
+  font-weight: bold;
+  color: var(--vscode-sideBar-foreground);
+  position: sticky; /* Make header sticky */
+  top: 0; /* Stick to the top of its scrolling container */
+  z-index: 1; /* Ensure it stays above content when scrolling */
+}
+
+td input {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background-color: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  box-sizing: border-box;
+  outline: none;
+}
+
+tbody tr:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
