@@ -2,6 +2,7 @@
 import * as vscode from 'vscode';
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
 import { TranslationsService } from './translations_service';
 
 class TranslationsPanel {
@@ -68,6 +69,19 @@ class TranslationsPanel {
                             await this.translationsService.saveAllTranslations(translationsMapForService, metadataMapForService);
                             this._panel.webview.postMessage({ command: 'save-success' });
                             vscode.window.showInformationMessage('Translations saved successfully!'); // Show info in VS Code
+                            
+                            // Automatically run flutter pub get to regenerate dart models
+                            const workspaceFolders = vscode.workspace.workspaceFolders;
+                            if (workspaceFolders && workspaceFolders.length > 0) {
+                                const cwd = workspaceFolders[0].uri.fsPath;
+                                exec('flutter pub get', { cwd }, (err) => {
+                                    if (err) {
+                                        vscode.window.showWarningMessage(`Failed to run 'flutter pub get': ${err.message}`);
+                                    } else {
+                                        vscode.window.showInformationMessage('Flutter generated localization files successfully.');
+                                    }
+                                });
+                            }
                         } catch (error: any) {
                             this._panel.webview.postMessage({ command: 'save-error' });
                             vscode.window.showErrorMessage(`Failed to save translations: ${error.message}`); // Show error in VS Code

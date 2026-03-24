@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import utils from './utils';
 import * as fs from 'fs';
+import * as path from 'path';
 
 class TranslationsService {
 
@@ -16,40 +17,114 @@ class TranslationsService {
         this._languageToFileUriMap = new Map<string, vscode.Uri>(); // Initialize
     }
 
+    private async _discoverArbFiles(): Promise<{ uri: vscode.Uri, language: string, isTemplate: boolean }[]> {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) return [];
+
+        const workspaceRoot = workspaceFolders[0].uri.fsPath;
+        const l10nYamlPath = path.join(workspaceRoot, 'l10n.yaml');
+        
+        let arbDir = '';
+        let templateArbFile = '';
+        let hasL10nYaml = false;
+
+        if (fs.existsSync(l10nYamlPath)) {
+            hasL10nYaml = true;
+            try {
+                const yamlContent = fs.readFileSync(l10nYamlPath, 'utf8');
+                const arbDirMatch = yamlContent.match(/^arb-dir\s*:\s*(.+)$/m);
+                if (arbDirMatch && arbDirMatch[1]) {
+                    arbDir = arbDirMatch[1].trim();
+                }
+                const templateMatch = yamlContent.match(/^template-arb-file\s*:\s*(.+)$/m);
+                if (templateMatch && templateMatch[1]) {
+                    templateArbFile = templateMatch[1].trim();
+                }
+            } catch (e) {
+                console.warn('Failed to parse l10n.yaml', e);
+            }
+        }
+
+        let searchPattern = '';
+        if (hasL10nYaml && arbDir) {
+            // Clean up arbDir to avoid leading slashes in glob
+            const cleanArbDir = arbDir.replace(/^\/+/, '');
+            searchPattern = `${cleanArbDir}/**/*.arb`;
+        } else {
+            // Fallback discovery
+            const l10nFiles = await vscode.workspace.findFiles('lib/l10n/**/*.arb');
+            if (l10nFiles.length > 0) return this._processDiscoveredFiles(l10nFiles, templateArbFile);
+            
+            const intlFiles = await vscode.workspace.findFiles('lib/intl/**/*.arb');
+            if (intlFiles.length > 0) return this._processDiscoveredFiles(intlFiles, templateArbFile);
+
+            searchPattern = '**/*.arb';
+        }
+
+        const files = await vscode.workspace.findFiles(searchPattern);
+        return this._processDiscoveredFiles(files, templateArbFile);
+    }
+
+    private _processDiscoveredFiles(files: vscode.Uri[], templateArbFile: string): { uri: vscode.Uri, language: string, isTemplate: boolean }[] {
+        const results: { uri: vscode.Uri, language: string, isTemplate: boolean }[] = [];
+        
+        for (const file of files) {
+            const filePath = file.fsPath;
+            const fileName = path.basename(filePath);
+            if (!fileName.endsWith('.arb')) continue;
+
+            let isTemplate = false;
+            if (templateArbFile && fileName === templateArbFile) {
+                isTemplate = true;
+            }
+
+            // Extract locale using robust regex
+            // Matches: app_en.arb -> en | app_en_US.arb -> en_US | app_zh_Hant.arb -> zh_Hant
+            const localeMatch = fileName.match(/_([a-z]{2}(?:_[A-Z]{2}|_[A-Z][a-z]{3})?)\.arb$/);
+            
+            let language = '';
+            if (localeMatch && localeMatch[1]) {
+                language = localeMatch[1];
+            } else {
+                // No locale suffix. Must be the template file (e.g. app.arb)
+                isTemplate = true;
+                // Try reading @@locale from file
+                try {
+                    const fileData = utils.readJsonFile(filePath);
+                    if (fileData && typeof fileData['@@locale'] === 'string') {
+                        language = fileData['@@locale'];
+                    }
+                } catch (e) {}
+                if (!language) language = 'en'; // ultimate fallback
+            }
+
+            results.push({ uri: file, language, isTemplate });
+        }
+
+        // Sort so template is explicitly handled or optionally track it
+        return results;
+    }
+
     public async createTranslationsMap() {
-        let allTranslationsFiles = await vscode.workspace.findFiles('**/*.arb');
         this.allLanguages.clear(); // Clear previous state
         this.translationsMap.clear();
         this.metadataMap.clear();
         this._languageToFileUriMap.clear();
 
-        for (let currentFile of allTranslationsFiles) {
-            let filePath = currentFile.fsPath;
-            let fileName = filePath.slice(filePath.lastIndexOf('/') + 1);
+        const discoveredFiles = await this._discoverArbFiles();
+
+        for (let item of discoveredFiles) {
+            let filePath = item.uri.fsPath;
+            let fileLanguage = item.language;
 
             const fileData = utils.readJsonFile(filePath);
-            if (!fileName.endsWith('.arb')) {
-                vscode.window.showErrorMessage('Please open a .arb file for localization editing.');
-                continue;
-            }
-
-            let fileLanguage =
-                new RegExp(/_(?<lan>[a-z]+)\.arb$/)
-                    .exec(fileName)
-                    ?.groups?.lan!;
-
-            if (fileLanguage) { // Only add if language is successfully extracted
-                this.allLanguages.add(fileLanguage);
-                this._languageToFileUriMap.set(fileLanguage, currentFile); // Store the URI
-            } else {
-                console.warn(`Could not extract language from file: ${fileName}`);
-                continue;
-            }
-
-
             if (fileData == null) {
-                console.log('Failed to read localization file.');
+                console.log(`Failed to read localization file: ${filePath}`);
+                continue;
             }
+
+            this.allLanguages.add(fileLanguage);
+            this._languageToFileUriMap.set(fileLanguage, item.uri);
 
             for (let key in fileData) {
                 // Ignore global metadata

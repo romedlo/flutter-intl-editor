@@ -355,6 +355,7 @@ function App() {
 
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
+  const filterInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragSort = () => {
     if (dragItem.current === null || dragOverItem.current === null) return;
@@ -577,6 +578,24 @@ function App() {
         },
     });
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        filterInputRef.current?.focus();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (hasUnsavedChanges) {
+          handleSaveChanges();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hasUnsavedChanges, translationsData, metadataMap]);
+
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -691,6 +710,7 @@ function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
             <input
+              ref={filterInputRef}
               type="text"
               placeholder="Filter translations..."
               value={filterText}
