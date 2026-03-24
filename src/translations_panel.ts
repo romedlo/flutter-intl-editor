@@ -22,34 +22,19 @@ class TranslationsPanel {
 
         this._update(); // Set initial HTML
 
-        this.translationsService.createTranslationsMap().then(() => {
-            const translations = this.translationsService.translationsMap;
-            const serializableTranslations: { [key: string]: { [lang: string]: string } } = {};
-            translations.forEach((value, key) => {
-                serializableTranslations[key] = Object.fromEntries(value);
-            });
-
-            const metadata = this.translationsService.metadataMap;
-            const serializableMetadata: { [key: string]: any } = {};
-            metadata.forEach((value, key) => {
-                serializableMetadata[key] = value;
-            });
-
-            this._panel.webview.postMessage({
-                command: 'initial-data',
-                data: {
-                    languages: Array.from(this.translationsService.allLanguages),
-                    translations: serializableTranslations,
-                    metadata: serializableMetadata
-                }
-            });
-        });
+        this._loadAndSendTranslations();
 
         this._panel.onDidDispose(() => this._dispose(), null, this._disposables);
 
         this._panel.webview.onDidReceiveMessage(
             async message => { // Mark as async
                 switch (message.command) {
+                    case 'reload':
+                        this._loadAndSendTranslations();
+                        break;
+                    case 'unsaved-changes':
+                        this._panel.title = message.data ? 'Flutter Intl •' : 'Flutter Intl';
+                        break;
                     case 'saveAllTranslations':
                         const isNewFormat = message.data && message.data.translations !== undefined;
                         const receivedTranslationsObject = isNewFormat ? message.data.translations : message.data;
@@ -99,6 +84,36 @@ class TranslationsPanel {
         );
     }
 
+    private _loadAndSendTranslations() {
+        this.translationsService.createTranslationsMap().then(() => {
+            const translations = this.translationsService.translationsMap;
+            const serializableTranslations: { [key: string]: { [lang: string]: string } } = {};
+            translations.forEach((value, key) => {
+                serializableTranslations[key] = Object.fromEntries(value);
+            });
+
+            const metadata = this.translationsService.metadataMap;
+            const serializableMetadata: { [key: string]: any } = {};
+            metadata.forEach((value, key) => {
+                serializableMetadata[key] = value;
+            });
+
+            this._panel.webview.postMessage({
+                command: 'initial-data',
+                data: {
+                    languages: Array.from(this.translationsService.allLanguages),
+                    translations: serializableTranslations,
+                    metadata: serializableMetadata
+                }
+            });
+        }).catch(e => {
+            this._panel.webview.postMessage({
+                command: 'load-error',
+                data: e instanceof Error ? e.message : String(e)
+            });
+        });
+    }
+
     public static createOrShow(extensionUri: vscode.Uri) {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
@@ -117,7 +132,8 @@ class TranslationsPanel {
                 enableScripts: true,
                 localResourceRoots: [
                     vscode.Uri.joinPath(extensionUri, 'src', 'webview', 'dist')
-                ]
+                ],
+                retainContextWhenHidden: true
             }
         );
 

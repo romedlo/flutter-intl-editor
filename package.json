@@ -12,10 +12,34 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "flutterIntlExplorer",
+          "title": "Flutter Intl Editor",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "flutterIntlExplorer": [
+        {
+          "id": "flutterIntlWelcome",
+          "name": "Localization"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "flutterIntlWelcome",
+        "contents": "Manage your Flutter ARB localizations seamlessly.\n\n[Open Editor](command:flutter-intl-editor.openLocalizationFile)"
+      }
+    ],
     "commands": [
       {
         "command": "flutter-intl-editor.openLocalizationFile",
-        "title": "Open ARB File"
+        "title": "Open ARB File",
+        "icon": "$(globe)"
       }
     ]
   },
