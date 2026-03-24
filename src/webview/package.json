@@ -4,12 +4,18 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node copy-dicts.js",
     "dev": "vite",
+    "prebuild": "node copy-dicts.js",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "dictionary-en": "^4.0.0",
+    "dictionary-es": "^4.0.0",
+    "dictionary-fr": "^3.0.0",
+    "nspell": "^2.1.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

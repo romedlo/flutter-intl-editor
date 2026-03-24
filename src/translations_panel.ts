@@ -29,11 +29,18 @@ class TranslationsPanel {
                 serializableTranslations[key] = Object.fromEntries(value);
             });
 
+            const metadata = this.translationsService.metadataMap;
+            const serializableMetadata: { [key: string]: any } = {};
+            metadata.forEach((value, key) => {
+                serializableMetadata[key] = value;
+            });
+
             this._panel.webview.postMessage({
                 command: 'initial-data',
                 data: {
                     languages: Array.from(this.translationsService.allLanguages),
-                    translations: serializableTranslations
+                    translations: serializableTranslations,
+                    metadata: serializableMetadata
                 }
             });
         });
@@ -44,7 +51,9 @@ class TranslationsPanel {
             async message => { // Mark as async
                 switch (message.command) {
                     case 'saveAllTranslations':
-                        const receivedTranslationsObject = message.data; // { key: { lang: value } }
+                        const isNewFormat = message.data && message.data.translations !== undefined;
+                        const receivedTranslationsObject = isNewFormat ? message.data.translations : message.data;
+                        const receivedMetadataObject = isNewFormat ? message.data.metadata : undefined;
 
                         const translationsMapForService = new Map<string, Map<string, string>>();
                         for (const key in receivedTranslationsObject) {
@@ -59,9 +68,19 @@ class TranslationsPanel {
                                 translationsMapForService.set(key, innerMap);
                             }
                         }
+                        
+                        let metadataMapForService: Map<string, any> | undefined;
+                        if (receivedMetadataObject) {
+                            metadataMapForService = new Map<string, any>();
+                            for (const key in receivedMetadataObject) {
+                                if (Object.prototype.hasOwnProperty.call(receivedMetadataObject, key)) {
+                                    metadataMapForService.set(key, receivedMetadataObject[key]);
+                                }
+                            }
+                        }
 
                         try {
-                            await this.translationsService.saveAllTranslations(translationsMapForService);
+                            await this.translationsService.saveAllTranslations(translationsMapForService, metadataMapForService);
                             this._panel.webview.postMessage({ command: 'save-success' });
                             vscode.window.showInformationMessage('Translations saved successfully!'); // Show info in VS Code
                         } catch (error: any) {
@@ -130,7 +149,10 @@ class TranslationsPanel {
         const indexPath = path.join(webviewDistPath.fsPath, 'index.html');
         let indexHtml = fs.readFileSync(indexPath, 'utf8');
         
-        // Update resource paths to work in the webview
+        // Inject base tag to resolve all relative URLs, making Vite's base: './' work perfectly
+        indexHtml = indexHtml.replace('<head>', `<head>\n    <base href="${webviewDistUri}/">`);
+        
+        // Keep the old regex just in case it's still generating absolute paths somewhere
         indexHtml = indexHtml.replace(/(href|src)="\/assets\//g, `$1="${webviewDistUri}/assets/`);
         
         return indexHtml;

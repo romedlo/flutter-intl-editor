@@ -6,11 +6,13 @@ class TranslationsService {
 
     public readonly allLanguages: Set<string>;
     public readonly translationsMap: Map<string, Map<string, string>>;
+    public readonly metadataMap: Map<string, any>;
     private _languageToFileUriMap: Map<string, vscode.Uri>; // New: Store language to file URI mapping
 
     public constructor() {
         this.allLanguages = new Set<string>();
         this.translationsMap = new Map<string, Map<string, string>>();
+        this.metadataMap = new Map<string, any>();
         this._languageToFileUriMap = new Map<string, vscode.Uri>(); // Initialize
     }
 
@@ -18,6 +20,7 @@ class TranslationsService {
         let allTranslationsFiles = await vscode.workspace.findFiles('**/*.arb');
         this.allLanguages.clear(); // Clear previous state
         this.translationsMap.clear();
+        this.metadataMap.clear();
         this._languageToFileUriMap.clear();
 
         for (let currentFile of allTranslationsFiles) {
@@ -49,8 +52,19 @@ class TranslationsService {
             }
 
             for (let key in fileData) {
-                // Only process actual translation keys, ignore ARB metadata like @@locale, @key
-                if (key.startsWith('@@') || key.startsWith('@')) continue;
+                // Ignore global metadata
+                if (key.startsWith('@@')) continue;
+
+                // Handle key-specific metadata
+                if (key.startsWith('@')) {
+                    const actualKey = key.slice(1);
+                    // Usually we take the first we find, or we could merge. 
+                    // Taking the first is fine because they should be identical across files if present.
+                    if (!this.metadataMap.has(actualKey)) {
+                        this.metadataMap.set(actualKey, fileData[key]);
+                    }
+                    continue;
+                }
 
                 if (typeof fileData[key] !== 'string') continue;
 
@@ -63,7 +77,10 @@ class TranslationsService {
         }
     }
 
-    public async saveAllTranslations(updatedTranslations: Map<string, Map<string, string>>): Promise<void> {
+    public async saveAllTranslations(
+        updatedTranslations: Map<string, Map<string, string>>,
+        updatedMetadata?: Map<string, any>
+    ): Promise<void> {
         // Iterate through each language known
         for (const language of this.allLanguages) {
             const fileUri = this._languageToFileUriMap.get(language);
@@ -90,14 +107,28 @@ class TranslationsService {
                 // Merge existing metadata with new translation values
                 const finalFileData: { [key: string]: string | object } = {};
                 for (const key in existingFileData) {
-                    if (key.startsWith('@@') || key.startsWith('@')) { // Preserve ARB metadata
+                    if (key.startsWith('@@')) { // Preserve global ARB metadata only
                         finalFileData[key] = existingFileData[key];
                     }
                 }
-                // Add or update actual translations
-                for (const key in languageSpecificContent) {
-                    finalFileData[key] = languageSpecificContent[key];
-                }
+                
+                // Add or update actual translations and their metadata
+                updatedTranslations.forEach((translationMapForKey, key) => {
+                    const valueForLang = translationMapForKey.get(language);
+                    if (valueForLang !== undefined) {
+                        finalFileData[key] = valueForLang;
+                        
+                        if (updatedMetadata && updatedMetadata.has(key)) {
+                            const meta = updatedMetadata.get(key);
+                            if (meta && Object.keys(meta).length > 0) {
+                                finalFileData[`@${key}`] = meta;
+                            }
+                        } else if (existingFileData[`@${key}`]) {
+                            // Preserve existing metadata if no updated metadata was provided
+                            finalFileData[`@${key}`] = existingFileData[`@${key}`];
+                        }
+                    }
+                });
 
                 // Write the updated content back to the file
                 fs.writeFileSync(fileUri.fsPath, JSON.stringify(finalFileData, null, 2));
