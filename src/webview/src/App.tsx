@@ -357,6 +357,28 @@ function App() {
   const dragOverItem = useRef<number | null>(null);
   const filterInputRef = useRef<HTMLInputElement>(null);
 
+  const [columnWidths, setColumnWidths] = useState<{ [key: string]: number }>({ '_key_': 250 });
+
+  const handleResizeStart = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = columnWidths[colKey] || 250;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const newWidth = Math.max(100, startWidth + (moveEvent.clientX - startX));
+      setColumnWidths(prev => ({ ...prev, [colKey]: newWidth }));
+    };
+    
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   const handleDragSort = () => {
     if (dragItem.current === null || dragOverItem.current === null) return;
     if (dragItem.current === dragOverItem.current) {
@@ -792,8 +814,9 @@ function App() {
       <table>
         <thead>
           <tr>
-            <th onClick={() => requestSort('_key_')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+            <th onClick={() => requestSort('_key_')} style={{ cursor: 'pointer', userSelect: 'none', width: columnWidths['_key_'] || 250, minWidth: columnWidths['_key_'] || 250, maxWidth: columnWidths['_key_'] || 250 }}>
               Key 🔑 {sortConfig?.key === '_key_' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+              <div className="resizer" onMouseDown={(e) => handleResizeStart(e, '_key_')} onClick={(e) => e.stopPropagation()} />
             </th>
             {languages.map((lang, index) => {
               const displayLang = languageMap[lang] || lang;
@@ -806,10 +829,11 @@ function App() {
                 onDragEnd={handleDragSort}
                 onDragOver={(e) => e.preventDefault()}
                 onClick={() => requestSort(lang)}
-                style={{ cursor: 'grab', userSelect: 'none' }}
+                style={{ cursor: 'grab', userSelect: 'none', width: columnWidths[lang] || 250, minWidth: columnWidths[lang] || 250, maxWidth: columnWidths[lang] || 250 }}
                 title={`Drag to reorder, click to sort (${lang})`}
               >
                 {displayLang} {sortConfig?.key === lang ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+                <div className="resizer" onMouseDown={(e) => handleResizeStart(e, lang)} onClick={(e) => e.stopPropagation()} />
               </th>
             )})}
           </tr>

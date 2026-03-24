@@ -22,6 +22,8 @@ th, td {
   text-align: left;
   vertical-align: middle;
   cursor: pointer; /* Indicate that cells are clickable */
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 th {
@@ -31,9 +33,20 @@ th {
   position: sticky; /* Make header sticky */
   top: 0; /* Stick to the top of its scrolling container */
   z-index: 1; /* Ensure it stays above content when scrolling */
-  resize: horizontal;
-  overflow: hidden;
-  min-width: 250px;
+}
+
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.resizer:hover {
+  background-color: var(--vscode-focusBorder);
 }
 
 /* Ensure the Key column is sticky on the left */
