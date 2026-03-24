@@ -1,7 +1,7 @@
 {
   "name": "flutter-intl-editor",
   "displayName": "Flutter Intl Editor",
-  "description": "A GUI for VS Code for editing Flutter Intl .arb files visually",
+  "description": "A GUI for VS Code for editing Flutter Intl .arb files",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.87.0"

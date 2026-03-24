@@ -3,16 +3,16 @@ body {
   padding: 0;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
-  color: var(--vscode-editorForeground);
+  color: var(--vscode-foreground);
   background-color: var(--vscode-editor-background);
-  padding-bottom: 60px; /* Added for the bottom toolbar */
+  padding-bottom: 60px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   background-color: var(--vscode-editor-background);
-  color: var(--vscode-editorForeground);
+  color: var(--vscode-foreground);
   table-layout: fixed;
 }
 
@@ -21,18 +21,19 @@ th, td {
   border: 1px solid var(--vscode-editorWidget-border);
   text-align: left;
   vertical-align: middle;
-  cursor: pointer; /* Indicate that cells are clickable */
+  cursor: pointer;
   word-break: break-all;
   overflow-wrap: break-word;
+  color: var(--vscode-foreground);
 }
 
 th {
   background-color: var(--vscode-sideBar-background);
   font-weight: bold;
-  color: var(--vscode-sideBar-foreground);
-  position: sticky; /* Make header sticky */
-  top: 0; /* Stick to the top of its scrolling container */
-  z-index: 1; /* Ensure it stays above content when scrolling */
+  color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .resizer {

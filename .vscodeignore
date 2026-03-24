@@ -12,3 +12,9 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# Exclude source React files
+src/webview/src
+
+# Keep the built output
+!src/webview/dist
