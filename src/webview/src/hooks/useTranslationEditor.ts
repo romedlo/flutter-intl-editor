@@ -1,0 +1,276 @@
+import { useState, useEffect, useRef, useMemo } from 'react';
+import type { TranslationData, SortConfig } from '../types';
+import { getSpellChecker } from '../nspell-loader';
+
+// vscode API is initialized in App.tsx and stored on window
+function getVscode() { return (window as any).vscode; }
+
+export function useTranslationEditor() {
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [translationsData, setTranslationsData] = useState<TranslationData[]>([]);
+  const [spellCheckers, setSpellCheckers] = useState<{ [lang: string]: any }>({});
+  const [editingCell, setEditingCell] = useState<{ key: string; lang: string; value: string; rect: DOMRect } | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  const [filterText, setFilterText] = useState('');
+  const [missingFilter, setMissingFilter] = useState('all');
+  const [hoverRow, setHoverRow] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [metadataMap, setMetadataMap] = useState<{ [key: string]: any }>({});
+  const [editingPlaceholder, setEditingPlaceholder] = useState<{ key: string; placeholder: string } | null>(null);
+  const [columnWidths, setColumnWidths] = useState<{ [key: string]: number }>({ '_key_': 250 });
+
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof getVscode() !== 'undefined') {
+      getVscode().postMessage({ command: 'unsaved-changes', data: hasUnsavedChanges });
+    }
+  }, [hasUnsavedChanges]);
+
+  // Load spell checkers when languages change
+  useEffect(() => {
+    let active = true;
+    languages.forEach(lang => {
+      if (lang === '_key_') return;
+      getSpellChecker(lang).then(spell => {
+        if (active && spell) setSpellCheckers(prev => ({ ...prev, [lang]: spell }));
+      });
+    });
+    return () => { active = false; };
+  }, [languages]);
+
+  // Handle messages from the VS Code extension host
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+      switch (message.command) {
+        case 'initial-data': {
+          const receivedData = message.data;
+          setLanguages(receivedData.languages);
+          const translationsArray = Object.entries(receivedData.translations).map(([key, translations]) => ({
+            key,
+            translations: translations as { [lang: string]: string },
+          }));
+          setTranslationsData(translationsArray);
+          setMetadataMap(receivedData.metadata || {});
+          setIsLoading(false);
+          setErrorMsg(null);
+          break;
+        }
+        case 'load-error':
+          setIsLoading(false);
+          setErrorMsg(message.data);
+          break;
+        case 'save-success':
+          setHasUnsavedChanges(false);
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Keyboard shortcuts: Cmd+F focuses filter, Cmd+S saves
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        document.getElementById('filter-input')?.focus();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (hasUnsavedChanges) handleSaveChanges();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hasUnsavedChanges, translationsData, metadataMap]);
+
+  // --- Handlers ---
+
+  const handleAcceptChange = (key: string, lang: string, newValue: string) => {
+    const isNewRow = key.startsWith('__new_row_');
+    const displayKey = isNewRow ? '' : key;
+
+    if (lang === '_key_') {
+      const trimmedNewValue = newValue.trim();
+      if (!trimmedNewValue) { alert('Key cannot be empty.'); return; }
+      if (trimmedNewValue === displayKey) { setEditingCell(null); return; }
+      if (translationsData.some(item => item.key === trimmedNewValue)) {
+        alert(`Key "${trimmedNewValue}" already exists.`);
+        return;
+      }
+      setTranslationsData(prevData => {
+        const newData = prevData.map(item => item.key === key ? { ...item, key: trimmedNewValue } : item);
+        setHasUnsavedChanges(true);
+        return newData;
+      });
+      setMetadataMap(prev => {
+        const newMeta = { ...prev };
+        if (newMeta[key] !== undefined) { newMeta[trimmedNewValue] = newMeta[key]; delete newMeta[key]; }
+        return newMeta;
+      });
+      setEditingCell(null);
+      return;
+    }
+
+    setTranslationsData(prevData => {
+      const newData = prevData.map(item =>
+        item.key === key ? { ...item, translations: { ...item.translations, [lang]: newValue } } : item
+      );
+      const originalValue = prevData.find(item => item.key === key)?.translations[lang] || '';
+      if (originalValue !== newValue) setHasUnsavedChanges(true);
+      return newData;
+    });
+    setEditingCell(null);
+  };
+
+  const handleDiscardChange = () => setEditingCell(null);
+
+  const handleCellClick = (key: string, lang: string, value: string, event: React.MouseEvent<HTMLTableCellElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setEditingCell({ key, lang, value, rect });
+  };
+
+  const handleAddRowMiddle = (index: number) => {
+    const newKeyId = `__new_row_${Date.now()}`;
+    const newTranslations: { [lang: string]: string } = {};
+    languages.forEach(lang => { newTranslations[lang] = ''; });
+    setTranslationsData(prev => {
+      const next = [...prev];
+      next.splice(index + 1, 0, { key: newKeyId, translations: newTranslations });
+      return next;
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleDeleteRow = (index: number) => {
+    if (window.confirm('Are you sure you want to delete this row entirely?')) {
+      setTranslationsData(prev => { const next = [...prev]; next.splice(index, 1); return next; });
+      setHasUnsavedChanges(true);
+    }
+  };
+
+  const handleGhostCellClick = (langToEdit: string, event: React.MouseEvent<HTMLTableCellElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const newKeyId = `__new_row_${Date.now()}`;
+    const newTranslations: { [lang: string]: string } = {};
+    languages.forEach(lang => { newTranslations[lang] = ''; });
+    setTranslationsData(prev => [...prev, { key: newKeyId, translations: newTranslations }]);
+    setHasUnsavedChanges(true);
+    setEditingCell({ key: newKeyId, lang: langToEdit, value: '', rect });
+  };
+
+  const handlePlaceholderClick = (key: string, placeholder: string) => setEditingPlaceholder({ key, placeholder });
+
+  const handleSavePlaceholder = (translationKey: string, placeholder: string, meta: any) => {
+    setMetadataMap(prev => {
+      const newMeta = { ...prev };
+      if (!newMeta[translationKey]) newMeta[translationKey] = {};
+      if (!newMeta[translationKey].placeholders) newMeta[translationKey].placeholders = {};
+      newMeta[translationKey].placeholders = { ...newMeta[translationKey].placeholders, [placeholder]: meta };
+      return newMeta;
+    });
+    setHasUnsavedChanges(true);
+    setEditingPlaceholder(null);
+  };
+
+  const handleSaveChanges = () => {
+    if (!hasUnsavedChanges) return;
+    const translationsMapForExtension: { [key: string]: { [lang: string]: string } } = {};
+    translationsData.forEach(item => {
+      if (!item.key.startsWith('__new_row_')) {
+        translationsMapForExtension[item.key] = item.translations;
+      }
+    });
+    getVscode().postMessage({
+      command: 'saveAllTranslations',
+      data: { translations: translationsMapForExtension, metadata: metadataMap },
+    });
+  };
+
+  const handleDragSort = () => {
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    if (dragItem.current === dragOverItem.current) { dragItem.current = null; dragOverItem.current = null; return; }
+    const newLanguages = [...languages];
+    const dragged = newLanguages.splice(dragItem.current, 1)[0];
+    newLanguages.splice(dragOverItem.current, 0, dragged);
+    setLanguages(newLanguages);
+    dragItem.current = null;
+    dragOverItem.current = null;
+  };
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  const handleResizeStart = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = columnWidths[colKey] || 250;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const newWidth = Math.max(100, startWidth + (moveEvent.clientX - startX));
+      setColumnWidths(prev => ({ ...prev, [colKey]: newWidth }));
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const filteredAndSortedData = useMemo(() => {
+    let processData = [...translationsData];
+
+    if (missingFilter !== 'all') {
+      processData = processData.filter(item => {
+        if (item.key.startsWith('__new_row_')) return true;
+        const val = item.translations[missingFilter];
+        return !val || val.trim() === '';
+      });
+    }
+
+    if (filterText) {
+      const lowerFilter = filterText.toLowerCase();
+      processData = processData.filter(item => {
+        if (item.key.toLowerCase().includes(lowerFilter)) return true;
+        return Object.values(item.translations).some(val => val.toLowerCase().includes(lowerFilter));
+      });
+    }
+
+    if (sortConfig) {
+      processData.sort((a, b) => {
+        const aValue = sortConfig.key === '_key_' ? a.key : (a.translations[sortConfig.key] || '');
+        const bValue = sortConfig.key === '_key_' ? b.key : (b.translations[sortConfig.key] || '');
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return processData;
+  }, [translationsData, filterText, sortConfig, missingFilter]);
+
+  return {
+    // State
+    languages, translationsData, spellCheckers, editingCell, hasUnsavedChanges,
+    sortConfig, filterText, setFilterText, missingFilter, setMissingFilter,
+    hoverRow, setHoverRow, isLoading, errorMsg, metadataMap, editingPlaceholder,
+    setEditingPlaceholder, columnWidths, filteredAndSortedData,
+    // Refs
+    dragItem, dragOverItem,
+    // Handlers
+    handleAcceptChange, handleDiscardChange, handleCellClick,
+    handleAddRowMiddle, handleDeleteRow, handleGhostCellClick,
+    handlePlaceholderClick, handleSavePlaceholder, handleSaveChanges,
+    handleDragSort, requestSort, handleResizeStart,
+  };
+}
