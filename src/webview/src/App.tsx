@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import './App.css';
 import './vscode.d.ts'; // For type definitions
 import { getSpellChecker } from './nspell-loader';
+import languageMapJson from './languages.json';
+
+const languageMap: Record<string, string> = languageMapJson;
 
 // Define the VS Code API once at the module level
 const vscode = acquireVsCodeApi();
@@ -335,6 +338,8 @@ function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [filterText, setFilterText] = useState<string>('');
+  const [missingFilter, setMissingFilter] = useState<string>('all');
+  const [hoverRow, setHoverRow] = useState<string | null>(null);
   
   const [metadataMap, setMetadataMap] = useState<{ [key: string]: any }>({});
   const [editingPlaceholder, setEditingPlaceholder] = useState<{ key: string, placeholder: string } | null>(null);
@@ -408,13 +413,16 @@ function App() {
   }, []); // Remove vscodeApi from dependencies, as it's no longer state
 
   const handleAcceptChange = (key: string, lang: string, newValue: string) => {
+    const isNewRow = key.startsWith('__new_row_');
+    const displayKey = isNewRow ? '' : key;
+
     if (lang === '_key_') {
       const trimmedNewValue = newValue.trim();
       if (!trimmedNewValue) {
         alert('Key cannot be empty.');
         return;
       }
-      if (trimmedNewValue === key) {
+      if (trimmedNewValue === displayKey) {
         setEditingCell(null);
         return;
       }
@@ -468,6 +476,48 @@ function App() {
     setEditingCell({ key, lang, value, rect });
   };
 
+  const handleAddRowMiddle = (index: number) => {
+    const newKeyId = `__new_row_${Date.now()}`;
+    const newTranslations: { [lang: string]: string } = {};
+    languages.forEach(lang => {
+      newTranslations[lang] = '';
+    });
+    
+    setTranslationsData(prev => {
+        const next = [...prev];
+        next.splice(index + 1, 0, { key: newKeyId, translations: newTranslations });
+        return next;
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleDeleteRow = (index: number) => {
+    if (window.confirm('Are you sure you want to delete this row entirely?')) {
+      setTranslationsData(prev => {
+        const next = [...prev];
+        next.splice(index, 1);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+    }
+  };
+
+  const handleGhostCellClick = (langToEdit: string, event: React.MouseEvent<HTMLTableCellElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const newKeyId = `__new_row_${Date.now()}`;
+    
+    const newTranslations: { [lang: string]: string } = {};
+    languages.forEach(lang => {
+      newTranslations[lang] = '';
+    });
+    
+    setTranslationsData(prev => [...prev, { key: newKeyId, translations: newTranslations }]);
+    setHasUnsavedChanges(true);
+
+    // Set editing cell immediately to the newly created row!
+    setEditingCell({ key: newKeyId, lang: langToEdit, value: '', rect });
+  };
+
   const handlePlaceholderClick = (key: string, placeholder: string) => {
     setEditingPlaceholder({ key, placeholder });
   };
@@ -499,7 +549,9 @@ function App() {
 
     const translationsMapForExtension: { [key: string]: { [lang: string]: string } } = {};
     translationsData.forEach(item => {
-        translationsMapForExtension[item.key] = item.translations;
+        if (!item.key.startsWith('__new_row_')) {
+            translationsMapForExtension[item.key] = item.translations;
+        }
     });
 
     vscode.postMessage({ // Use 'vscode' here
@@ -520,6 +572,14 @@ function App() {
 
   const filteredAndSortedData = useMemo(() => {
     let processData = [...translationsData];
+
+    if (missingFilter !== 'all') {
+      processData = processData.filter(item => {
+        if (item.key.startsWith('__new_row_')) return true; // keep newly created ghost rows visible
+        const val = item.translations[missingFilter];
+        return !val || val.trim() === ''; // Empty means missing/pending
+      });
+    }
 
     if (filterText) {
       const lowerFilter = filterText.toLowerCase();
@@ -544,7 +604,7 @@ function App() {
       });
     }
     return processData;
-  }, [translationsData, filterText, sortConfig]);
+  }, [translationsData, filterText, sortConfig, missingFilter]);
 
 
   if (translationsData.length === 0) {
@@ -553,80 +613,18 @@ function App() {
 
   return (
     <>
-      <table>
-        <thead>
-          <tr>
-            <th onClick={() => requestSort('_key_')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-              Key {sortConfig?.key === '_key_' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
-            </th>
-            {languages.map((lang, index) => (
-              <th
-                key={lang}
-                draggable
-                onDragStart={() => (dragItem.current = index)}
-                onDragEnter={() => (dragOverItem.current = index)}
-                onDragEnd={handleDragSort}
-                onDragOver={(e) => e.preventDefault()}
-                onClick={() => requestSort(lang)}
-                style={{ cursor: 'grab', userSelect: 'none' }}
-                title="Drag to reorder, click to sort"
-              >
-                {lang} {sortConfig?.key === lang ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {filteredAndSortedData.map((item) => (
-            <tr key={item.key}>
-              <td onClick={(e) => handleCellClick(item.key, '_key_', item.key, e)}>
-                {renderTranslationText(item.key, item.key, metadataMap, filterText, null, handlePlaceholderClick)}
-              </td>
-              {languages.map(lang => (
-                <td key={lang} onClick={(e) => handleCellClick(item.key, lang, item.translations[lang] || '', e)}>
-                  {renderTranslationText(item.translations[lang] || '', item.key, metadataMap, filterText, spellCheckers[lang], handlePlaceholderClick)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {editingCell && (
-        <FloatingDialog
-          currentKey={editingCell.key}
-          currentLang={editingCell.lang}
-          initialValue={editingCell.value}
-          onAccept={handleAcceptChange}
-          onDiscard={handleDiscardChange}
-          rect={editingCell.rect}
-        />
-      )}
-
-      {editingPlaceholder && (
-        <PlaceholderDialog
-          translationKey={editingPlaceholder.key}
-          placeholder={editingPlaceholder.placeholder}
-          existingMeta={metadataMap[editingPlaceholder.key]?.placeholders?.[editingPlaceholder.placeholder] || {}}
-          onSave={handleSavePlaceholder}
-          onClose={() => setEditingPlaceholder(null)}
-        />
-      )}
-
-      {/* Bottom Toolbar */}
       <div style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: 'var(--vscode-sideBar-background)', // Toolbar background
-        borderTop: '1px solid var(--vscode-editorWidget-border)',
+        position: 'sticky',
+        top: 0,
+        backgroundColor: 'var(--vscode-sideBar-background)',
+        borderBottom: '1px solid var(--vscode-editorWidget-border)',
         padding: '10px 15px',
-        zIndex: 10001, // Above floating dialog
+        zIndex: 10001,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between', // Input on left, save button on right
+        justifyContent: 'space-between',
         gap: '10px',
+        marginBottom: '10px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -667,9 +665,27 @@ function App() {
               </button>
             )}
           </div>
-          {filterText && (
+          <select 
+            value={missingFilter} 
+            onChange={e => setMissingFilter(e.target.value)}
+            style={{
+              padding: '6px',
+              border: '1px solid var(--vscode-input-border)',
+              backgroundColor: 'var(--vscode-input-background)',
+              color: 'var(--vscode-input-foreground)',
+              outline: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">All Complete & Pending</option>
+            {languages.map(lang => (
+              <option key={lang} value={lang}>Missing: {languageMap[lang] || lang}</option>
+            ))}
+          </select>
+          {(filterText || missingFilter !== 'all') && (
             <span style={{ fontSize: '0.9em', opacity: 0.8 }}>
-              {filteredAndSortedData.length} / {translationsData.length} results
+              {filteredAndSortedData.length} / {translationsData.filter(r => !r.key.startsWith('__new')).length} results
             </span>
           )}
         </div>
@@ -690,6 +706,107 @@ function App() {
           Save Changes
         </button>
       </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th onClick={() => requestSort('_key_')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+              Key 🔑 {sortConfig?.key === '_key_' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+            </th>
+            {languages.map((lang, index) => {
+              const displayLang = languageMap[lang] || lang;
+              return (
+              <th
+                key={lang}
+                draggable
+                onDragStart={() => (dragItem.current = index)}
+                onDragEnter={() => (dragOverItem.current = index)}
+                onDragEnd={handleDragSort}
+                onDragOver={(e) => e.preventDefault()}
+                onClick={() => requestSort(lang)}
+                style={{ cursor: 'grab', userSelect: 'none' }}
+                title={`Drag to reorder, click to sort (${lang})`}
+              >
+                {displayLang} {sortConfig?.key === lang ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+              </th>
+            )})}
+          </tr>
+        </thead>
+        <tbody>
+          {filteredAndSortedData.map((item, index) => {
+            const isNewRow = item.key.startsWith('__new_row_');
+            const displayKey = isNewRow ? '' : item.key;
+            return (
+            <tr key={item.key} onMouseEnter={() => setHoverRow(item.key)} onMouseLeave={() => setHoverRow(null)}>
+              <td 
+                onClick={(e) => handleCellClick(item.key, '_key_', displayKey, e)} 
+                style={{ zIndex: hoverRow === item.key ? 10 : undefined }}
+              >
+                {hoverRow === item.key && (
+                  <div style={{ position: 'absolute', bottom: '-10px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '4px', zIndex: 10 }}>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleAddRowMiddle(index); }}
+                      style={{ width: '20px', height: '20px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--vscode-editorWidget-border)', background: 'var(--vscode-button-background)', color: 'var(--vscode-button-foreground)', cursor: 'pointer', fontSize: '14px', lineHeight: '10px', opacity: 0.9, boxShadow: '0 2px 5px rgba(0,0,0,0.3)' }}
+                      title="Insert row below"
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.9'}
+                    >
+                      +
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleDeleteRow(index); }}
+                      style={{ width: '20px', height: '20px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--vscode-editorWidget-border)', background: 'var(--vscode-errorForeground, red)', color: 'white', cursor: 'pointer', fontSize: '12px', lineHeight: '10px', opacity: 0.9, boxShadow: '0 2px 5px rgba(0,0,0,0.3)' }}
+                      title="Delete row"
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.9'}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                {isNewRow && !displayKey ? <span style={{ opacity: 0.5, fontStyle: 'italic' }}>New Key...</span> : renderTranslationText(displayKey, item.key, metadataMap, filterText, null, handlePlaceholderClick)}
+              </td>
+              {languages.map(lang => (
+                <td key={lang} onClick={(e) => handleCellClick(item.key, lang, item.translations[lang] || '', e)}>
+                  {renderTranslationText(item.translations[lang] || '', item.key, metadataMap, filterText, spellCheckers[lang], handlePlaceholderClick)}
+                </td>
+              ))}
+            </tr>
+          )})}
+          {/* Ghost Row */}
+          {!filterText && (
+            <tr style={{ opacity: 0.6 }}>
+              <td onClick={(e) => handleGhostCellClick('_key_', e)} style={{ cursor: 'text' }}>
+                 <span style={{ color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic' }}>+ Add new key...</span>
+              </td>
+              {languages.map(lang => (
+                 <td key={lang} onClick={(e) => handleGhostCellClick(lang, e)} style={{ cursor: 'text' }}></td>
+              ))}
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {editingCell && (
+        <FloatingDialog
+          currentKey={editingCell.key}
+          currentLang={editingCell.lang}
+          initialValue={editingCell.value}
+          onAccept={handleAcceptChange}
+          onDiscard={handleDiscardChange}
+          rect={editingCell.rect}
+        />
+      )}
+
+      {editingPlaceholder && (
+        <PlaceholderDialog
+          translationKey={editingPlaceholder.key}
+          placeholder={editingPlaceholder.placeholder}
+          existingMeta={metadataMap[editingPlaceholder.key]?.placeholders?.[editingPlaceholder.placeholder] || {}}
+          onSave={handleSavePlaceholder}
+          onClose={() => setEditingPlaceholder(null)}
+        />
+      )}
     </>
   );
 }

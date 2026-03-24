@@ -13,6 +13,7 @@ table {
   border-collapse: collapse;
   background-color: var(--vscode-editor-background);
   color: var(--vscode-editorForeground);
+  table-layout: fixed;
 }
 
 th, td {
@@ -30,6 +31,26 @@ th {
   position: sticky; /* Make header sticky */
   top: 0; /* Stick to the top of its scrolling container */
   z-index: 1; /* Ensure it stays above content when scrolling */
+  resize: horizontal;
+  overflow: hidden;
+  min-width: 250px;
+}
+
+/* Ensure the Key column is sticky on the left */
+td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2; /* Needs to float above scrolling translation columns */
+  background-color: var(--vscode-sideBar-background); /* Match header color */
+}
+
+/* The Key header needs to be sticky BOTH top and left, so it needs a higher z-index */
+th:first-child {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 3; /* Float above both header and regular key cells */
+  background-color: var(--vscode-sideBar-background);
 }
 
 td input {
