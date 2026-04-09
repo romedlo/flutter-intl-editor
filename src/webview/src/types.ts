@@ -7,7 +7,7 @@ export interface FloatingDialogProps {
   currentKey: string;
   currentLang: string;
   initialValue: string;
-  onAccept: (key: string, lang: string, newValue: string) => void;
+  onAccept: (key: string, lang: string, newValue: string, direction?: 'next' | 'prev') => void;
   onDiscard: () => void;
   rect: DOMRect;
 }

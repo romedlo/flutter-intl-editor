@@ -5,11 +5,17 @@ import { getSpellChecker } from '../nspell-loader';
 export default function FloatingDialog({ currentKey, currentLang, initialValue, onAccept, onDiscard, rect }: FloatingDialogProps) {
   const [editedValue, setEditedValue] = useState(initialValue);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [spellChecker, setSpellChecker] = useState<any>(null);
   const [spellErrors, setSpellErrors] = useState<{ word: string, suggestions: string[] }[]>([]);
 
   useEffect(() => {
+    setEditedValue(initialValue);
+  }, [currentKey, currentLang, initialValue]);
+
+  useEffect(() => {
+    setSpellChecker(null);
+    setSpellErrors([]);
     if (currentLang === '_key_') return;
     let active = true;
     getSpellChecker(currentLang).then(spell => {
@@ -47,9 +53,19 @@ export default function FloatingDialog({ currentKey, currentLang, initialValue, 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onDiscard]);
 
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') onAccept(currentKey, currentLang, editedValue);
-    else if (e.key === 'Escape') onDiscard();
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      onAccept(currentKey, currentLang, editedValue);
+    }
+    else if (e.key === 'Tab') {
+      e.preventDefault();
+      onAccept(currentKey, currentLang, editedValue, e.shiftKey ? 'prev' : 'next');
+    }
+    else if (e.key === 'Escape') {
+      e.preventDefault();
+      onDiscard();
+    }
   };
 
   return (
@@ -61,17 +77,18 @@ export default function FloatingDialog({ currentKey, currentLang, initialValue, 
         boxShadow: '0 2px 8px rgba(0,0,0,0.3)', padding: '5px', display: 'flex', flexDirection: 'column', gap: '5px',
       }}
     >
-      <input
+      <textarea
         ref={inputRef}
-        type="text"
         value={editedValue}
         onChange={(e) => setEditedValue(e.target.value)}
         onKeyDown={handleInputKeyDown}
         spellCheck={false}
+        rows={2}
         style={{
           width: '100%', padding: '4px', border: '1px solid var(--vscode-input-border)',
           backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-input-foreground)',
           outline: 'none', boxSizing: 'border-box',
+          resize: 'vertical', fontFamily: 'inherit'
         }}
       />
       {spellErrors.length > 0 && (

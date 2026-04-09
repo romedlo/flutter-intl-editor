@@ -5,6 +5,8 @@ import { getSpellChecker } from '../nspell-loader';
 // vscode API is initialized in App.tsx and stored on window
 function getVscode() { return (window as any).vscode; }
 
+export const isValidFlutterKey = (key: string) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key);
+
 export function useTranslationEditor() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [translationsData, setTranslationsData] = useState<TranslationData[]>([]);
@@ -131,7 +133,7 @@ export function useTranslationEditor() {
           const translationsMapForExtension: { [key: string]: { [lang: string]: string } } = {};
           setTranslationsData(currentData => {
             currentData.forEach(item => {
-              if (!item.key.startsWith('__new_row_')) {
+              if (!item.key.startsWith('__new_row_') && isValidFlutterKey(item.key)) {
                 translationsMapForExtension[item.key] = item.translations;
               }
             });
@@ -165,40 +167,96 @@ export function useTranslationEditor() {
 
   // --- Handlers ---
 
-  const handleAcceptChange = (key: string, lang: string, newValue: string) => {
+  const handleAcceptChange = (key: string, lang: string, newValue: string, direction?: 'next' | 'prev') => {
     const isNewRow = key.startsWith('__new_row_');
     const displayKey = isNewRow ? '' : key;
+    let nextRowKey: string | null = key;
 
     if (lang === '_key_') {
       const trimmedNewValue = newValue.trim();
-      if (!trimmedNewValue) { alert('Key cannot be empty.'); return; }
-      if (trimmedNewValue === displayKey) { setEditingCell(null); return; }
-      if (translationsData.some(item => item.key === trimmedNewValue)) {
-        alert(`Key "${trimmedNewValue}" already exists.`);
-        return;
+      if (!trimmedNewValue) { 
+        getVscode().postMessage({ command: 'alert', text: 'Key cannot be empty.' }); 
+        return; 
       }
+      if (trimmedNewValue !== displayKey) {
+        if (translationsData.some(item => item.key === trimmedNewValue)) {
+          getVscode().postMessage({ command: 'alert', text: `Key "${trimmedNewValue}" already exists.` });
+          return;
+        }
+        setTranslationsData(prevData => {
+          const newData = prevData.map(item => item.key === key ? { ...item, key: trimmedNewValue } : item);
+          setHasUnsavedChanges(true);
+          return newData;
+        });
+        setMetadataMap(prev => {
+          const newMeta = { ...prev };
+          if (newMeta[key] !== undefined) { newMeta[trimmedNewValue] = newMeta[key]; delete newMeta[key]; }
+          return newMeta;
+        });
+      }
+      nextRowKey = trimmedNewValue;
+    } else {
       setTranslationsData(prevData => {
-        const newData = prevData.map(item => item.key === key ? { ...item, key: trimmedNewValue } : item);
-        setHasUnsavedChanges(true);
+        const newData = prevData.map(item =>
+          item.key === key ? { ...item, translations: { ...item.translations, [lang]: newValue } } : item
+        );
+        const originalValue = prevData.find(item => item.key === key)?.translations[lang] || '';
+        if (originalValue !== newValue) setHasUnsavedChanges(true);
         return newData;
       });
-      setMetadataMap(prev => {
-        const newMeta = { ...prev };
-        if (newMeta[key] !== undefined) { newMeta[trimmedNewValue] = newMeta[key]; delete newMeta[key]; }
-        return newMeta;
-      });
-      setEditingCell(null);
-      return;
     }
 
-    setTranslationsData(prevData => {
-      const newData = prevData.map(item =>
-        item.key === key ? { ...item, translations: { ...item.translations, [lang]: newValue } } : item
-      );
-      const originalValue = prevData.find(item => item.key === key)?.translations[lang] || '';
-      if (originalValue !== newValue) setHasUnsavedChanges(true);
-      return newData;
-    });
+    if (direction === 'next' || direction === 'prev') {
+      const cols = ['_key_', ...languages];
+      const colIndex = cols.indexOf(lang);
+      
+      let nextLang = cols[direction === 'next' ? colIndex + 1 : colIndex - 1];
+      
+      if (!nextLang) {
+        if (direction === 'next') {
+          nextLang = '_key_';
+          const currentTd = document.getElementById(`cell-${key}-${lang}`);
+          const nextTr = currentTd?.parentElement?.nextElementSibling as HTMLElement;
+          const nextTd = nextTr?.firstElementChild as HTMLElement;
+          nextRowKey = (nextTd && nextTd.dataset.rowkey) ? nextTd.dataset.rowkey : null;
+        } else {
+          nextLang = cols[cols.length - 1];
+          const currentTd = document.getElementById(`cell-${key}-${lang}`);
+          const prevTr = currentTd?.parentElement?.previousElementSibling as HTMLElement;
+          const prevTd = prevTr?.firstElementChild as HTMLElement;
+          nextRowKey = (prevTd && prevTd.dataset.rowkey) ? prevTd.dataset.rowkey : null;
+        }
+      }
+
+      if (nextRowKey) {
+        setTimeout(() => {
+          const nextTd = document.getElementById(`cell-${nextRowKey}-${nextLang}`);
+          if (nextTd) {
+            nextTd.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+            // Retrieve latest accurate raw text for the dialog
+            setTranslationsData(currentData => {
+              const nextRowData = currentData.find(r => r.key === nextRowKey);
+              const nextValue = nextLang === '_key_' 
+                ? (nextRowKey!.startsWith('__new_row_') ? '' : nextRowKey!)
+                : (nextRowData ? (nextRowData.translations[nextLang] || '') : '');
+              
+              setEditingCell({
+                key: nextRowKey as string,
+                lang: nextLang,
+                value: nextValue,
+                // Make sure to query the rect fresh from DOM after scroll/render
+                rect: nextTd.getBoundingClientRect(),
+              });
+              return currentData;
+            });
+          } else {
+            setEditingCell(null);
+          }
+        }, 0);
+        return;
+      }
+    }
+
     setEditingCell(null);
   };
 
@@ -262,11 +320,25 @@ export function useTranslationEditor() {
   const handleSaveChanges = () => {
     if (!hasUnsavedChanges) return;
     const translationsMapForExtension: { [key: string]: { [lang: string]: string } } = {};
+    let invalidCount = 0;
+
     translationsData.forEach(item => {
       if (!item.key.startsWith('__new_row_')) {
-        translationsMapForExtension[item.key] = item.translations;
+        if (!isValidFlutterKey(item.key)) {
+          invalidCount++;
+        } else {
+          translationsMapForExtension[item.key] = item.translations;
+        }
       }
     });
+
+    if (invalidCount > 0) {
+      getVscode().postMessage({ 
+        command: 'alert', 
+        text: `Warning: ${invalidCount} key(s) have invalid Flutter formats and were ignored during save.` 
+      });
+    }
+
     getVscode().postMessage({
       command: 'saveAllTranslations',
       data: { translations: translationsMapForExtension, metadata: metadataMap },

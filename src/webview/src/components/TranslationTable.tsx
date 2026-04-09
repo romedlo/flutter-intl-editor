@@ -1,6 +1,7 @@
 import type { TranslationData, SortConfig } from '../types';
 import { renderTranslationText } from '../utils/renderText';
 import languageMapJson from '../languages.json';
+import { isValidFlutterKey } from '../hooks/useTranslationEditor';
 
 const languageMap: Record<string, string> = languageMapJson;
 
@@ -72,8 +73,11 @@ export default function TranslationTable({
           return (
             <tr key={item.key} onMouseEnter={() => setHoverRow(item.key)} onMouseLeave={() => setHoverRow(null)}>
               <td
+                id={`cell-${item.key}-_key_`}
+                data-rowkey={item.key}
+                data-lang="_key_"
                 onClick={(e) => onCellClick(item.key, '_key_', displayKey, e)}
-                style={{ zIndex: hoverRow === item.key ? 10 : undefined }}
+                style={{ zIndex: hoverRow === item.key ? 10 : undefined, fontFamily: 'monospace' }}
               >
                 {hoverRow === item.key && (
                   <div style={{ position: 'absolute', bottom: '-10px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '4px', zIndex: 10 }}>
@@ -99,11 +103,29 @@ export default function TranslationTable({
                 )}
                 {isNewRow && !displayKey
                   ? <span style={{ opacity: 0.5, fontStyle: 'italic' }}>New Key...</span>
-                  : renderTranslationText(displayKey, item.key, metadataMap, filterText, null, onPlaceholderClick)
+                  : (
+                    <span 
+                      style={(!isValidFlutterKey(displayKey) && !isNewRow) ? {
+                        textDecorationLine: 'underline',
+                        textDecorationStyle: 'wavy',
+                        textDecorationColor: 'var(--vscode-editorError-foreground, red)',
+                        textUnderlineOffset: '3px',
+                      } : undefined}
+                      title={(!isValidFlutterKey(displayKey) && !isNewRow) ? 'Invalid key format. Only alphanumeric and _, starting with a letter or _.' : undefined}
+                    >
+                      {renderTranslationText(displayKey, item.key, metadataMap, filterText, null, onPlaceholderClick)}
+                    </span>
+                  )
                 }
               </td>
               {languages.map(lang => (
-                <td key={lang} onClick={(e) => onCellClick(item.key, lang, item.translations[lang] || '', e)}>
+                <td 
+                  key={lang} 
+                  id={`cell-${item.key}-${lang}`}
+                  data-rowkey={item.key}
+                  data-lang={lang}
+                  onClick={(e) => onCellClick(item.key, lang, item.translations[lang] || '', e)}
+                >
                   {renderTranslationText(item.translations[lang] || '', item.key, metadataMap, filterText, spellCheckers[lang], onPlaceholderClick)}
                 </td>
               ))}
@@ -113,7 +135,7 @@ export default function TranslationTable({
         {/* Ghost row */}
         {!filterText && (
           <tr style={{ opacity: 0.6 }}>
-            <td onClick={(e) => onGhostCellClick('_key_', e)} style={{ cursor: 'text' }}>
+            <td onClick={(e) => onGhostCellClick('_key_', e)} style={{ cursor: 'text', fontFamily: 'monospace' }}>
               <span style={{ color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic' }}>+ Add new key...</span>
             </td>
             {languages.map(lang => (
