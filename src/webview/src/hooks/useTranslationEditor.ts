@@ -185,6 +185,11 @@ export function useTranslationEditor() {
       }
     };
     window.addEventListener('message', handleMessage);
+    
+    if (typeof getVscode() !== 'undefined') {
+      getVscode().postMessage({ command: 'ready' });
+    }
+
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 

@@ -23,8 +23,6 @@ class TranslationsPanel {
         this.translationsService = new TranslationsService();
 
         this._update(); // Set initial HTML
-
-        this._loadAndSendTranslations();
         
         const watcher = vscode.workspace.createFileSystemWatcher('**/*.arb');
         watcher.onDidChange(() => this._onArbFilesChangedEvent());
@@ -37,6 +35,9 @@ class TranslationsPanel {
         this._panel.webview.onDidReceiveMessage(
             async message => { // Mark as async
                 switch (message.command) {
+                    case 'ready':
+                        this._loadAndSendTranslations();
+                        break;
                     case 'reload':
                         this._loadAndSendTranslations();
                         break;
