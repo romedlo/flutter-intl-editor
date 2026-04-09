@@ -15,8 +15,8 @@ interface TranslationTableProps {
   hoverRow: string | null;
   setHoverRow: (key: string | null) => void;
   onCellClick: (key: string, lang: string, value: string, e: React.MouseEvent<HTMLTableCellElement>) => void;
-  onAddRow: (index: number) => void;
-  onDeleteRow: (index: number) => void;
+  onAddRow: (key: string) => void;
+  onDeleteRow: (key: string) => void;
   onGhostCellClick: (lang: string, e: React.MouseEvent<HTMLTableCellElement>) => void;
   onPlaceholderClick: (key: string, placeholder: string) => void;
   onResizeStart: (e: React.MouseEvent, colKey: string) => void;
@@ -66,7 +66,7 @@ export default function TranslationTable({
         </tr>
       </thead>
       <tbody>
-        {filteredData.map((item, index) => {
+        {filteredData.map((item, _) => {
           const isNewRow = item.key.startsWith('__new_row_');
           const displayKey = isNewRow ? '' : item.key;
           return (
@@ -78,7 +78,7 @@ export default function TranslationTable({
                 {hoverRow === item.key && (
                   <div style={{ position: 'absolute', bottom: '-10px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '4px', zIndex: 10 }}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); onAddRow(index); }}
+                      onClick={(e) => { e.stopPropagation(); onAddRow(item.key); }}
                       style={{ width: '20px', height: '20px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--vscode-editorWidget-border)', background: 'var(--vscode-button-background)', color: 'var(--vscode-button-foreground)', cursor: 'pointer', fontSize: '14px', lineHeight: '10px', opacity: 0.9, boxShadow: '0 2px 5px rgba(0,0,0,0.3)' }}
                       title="Insert row below"
                       onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
@@ -87,7 +87,7 @@ export default function TranslationTable({
                       +
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteRow(index); }}
+                      onClick={(e) => { e.stopPropagation(); onDeleteRow(item.key); }}
                       style={{ width: '20px', height: '20px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--vscode-editorWidget-border)', background: 'var(--vscode-errorForeground, red)', color: 'white', cursor: 'pointer', fontSize: '12px', lineHeight: '10px', opacity: 0.9, boxShadow: '0 2px 5px rgba(0,0,0,0.3)' }}
                       title="Delete row"
                       onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}

@@ -167,7 +167,7 @@ class TranslationsService {
             const languageSpecificContent: { [key: string]: string } = {};
             updatedTranslations.forEach((translationMapForKey, key) => {
                 const valueForLang = translationMapForKey.get(language);
-                if (valueForLang !== undefined) {
+                if (valueForLang !== undefined && valueForLang.trim().length > 0) {
                     languageSpecificContent[key] = valueForLang;
                 }
             });
@@ -190,7 +190,7 @@ class TranslationsService {
                 // Add or update actual translations and their metadata
                 updatedTranslations.forEach((translationMapForKey, key) => {
                     const valueForLang = translationMapForKey.get(language);
-                    if (valueForLang !== undefined) {
+                    if (valueForLang !== undefined && valueForLang !== '') {
                         finalFileData[key] = valueForLang;
                         
                         if (updatedMetadata && updatedMetadata.has(key)) {

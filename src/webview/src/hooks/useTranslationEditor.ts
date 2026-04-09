@@ -137,23 +137,30 @@ export function useTranslationEditor() {
     setEditingCell({ key, lang, value, rect });
   };
 
-  const handleAddRowMiddle = (index: number) => {
+  const handleAddRowMiddle = (afterKey: string) => {
     const newKeyId = `__new_row_${Date.now()}`;
     const newTranslations: { [lang: string]: string } = {};
     languages.forEach(lang => { newTranslations[lang] = ''; });
     setTranslationsData(prev => {
       const next = [...prev];
-      next.splice(index + 1, 0, { key: newKeyId, translations: newTranslations });
+      // Find the true position in raw data (not the sorted view index)
+      const rawIndex = next.findIndex(item => item.key === afterKey);
+      const insertAt = rawIndex >= 0 ? rawIndex + 1 : next.length;
+      next.splice(insertAt, 0, { key: newKeyId, translations: newTranslations });
       return next;
     });
     setHasUnsavedChanges(true);
   };
 
-  const handleDeleteRow = (index: number) => {
-    if (window.confirm('Are you sure you want to delete this row entirely?')) {
-      setTranslationsData(prev => { const next = [...prev]; next.splice(index, 1); return next; });
-      setHasUnsavedChanges(true);
-    }
+  const handleDeleteRow = (key: string) => {
+    setTranslationsData(prev => {
+      const rawIndex = prev.findIndex(item => item.key === key);
+      if (rawIndex === -1) return prev;
+      const next = [...prev];
+      next.splice(rawIndex, 1);
+      return next;
+    });
+    setHasUnsavedChanges(true);
   };
 
   const handleGhostCellClick = (langToEdit: string, event: React.MouseEvent<HTMLTableCellElement>) => {
@@ -248,12 +255,27 @@ export function useTranslationEditor() {
     }
 
     if (sortConfig) {
+      const sortVals = new Map<string, { val: string, origIdx: number }>();
+      let lastParentVal = '';
+      
+      // Precompute sort values based on raw data. New rows inherit the value of the preceding non-new row.
+      for (let i = 0; i < translationsData.length; i++) {
+        const item = translationsData[i];
+        if (!item.key.startsWith('__new_row_')) {
+          lastParentVal = sortConfig.key === '_key_' ? item.key : (item.translations[sortConfig.key] || '');
+        }
+        sortVals.set(item.key, { val: lastParentVal, origIdx: i });
+      }
+
       processData.sort((a, b) => {
-        const aValue = sortConfig.key === '_key_' ? a.key : (a.translations[sortConfig.key] || '');
-        const bValue = sortConfig.key === '_key_' ? b.key : (b.translations[sortConfig.key] || '');
-        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
+        const aMeta = sortVals.get(a.key)!;
+        const bMeta = sortVals.get(b.key)!;
+        
+        if (aMeta.val < bMeta.val) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aMeta.val > bMeta.val) return sortConfig.direction === 'asc' ? 1 : -1;
+        
+        // Preserve original insertion order to keep new rows below their parents
+        return aMeta.origIdx - bMeta.origIdx;
       });
     }
     return processData;

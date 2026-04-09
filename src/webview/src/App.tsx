@@ -68,7 +68,7 @@ function App() {
           Your <code>.arb</code> files are currently empty. Let's add your first translation key!
         </p>
         <button
-          onClick={() => handleAddRowMiddle(-1)}
+          onClick={() => handleAddRowMiddle('')}
           style={{ padding: '10px 20px', fontSize: '14px', background: 'var(--vscode-button-background)', color: 'var(--vscode-button-foreground)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
         >
           + Add First Key
