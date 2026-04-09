@@ -11,6 +11,8 @@ export function useTranslationEditor() {
   const [spellCheckers, setSpellCheckers] = useState<{ [lang: string]: any }>({});
   const [editingCell, setEditingCell] = useState<{ key: string; lang: string; value: string; rect: DOMRect } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [syncAvailable, setSyncAvailable] = useState(false);
+  const lastKnownDiskData = useRef<{ [key: string]: { [lang: string]: string } }>({});
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [filterText, setFilterText] = useState('');
   const [missingFilter, setMissingFilter] = useState('all');
@@ -55,9 +57,65 @@ export function useTranslationEditor() {
             translations: translations as { [lang: string]: string },
           }));
           setTranslationsData(translationsArray);
+          lastKnownDiskData.current = receivedData.translations;
           setMetadataMap(receivedData.metadata || {});
           setIsLoading(false);
           setErrorMsg(null);
+          break;
+        }
+        case 'sync-available':
+          setSyncAvailable(true);
+          break;
+        case 'sync-data': {
+          const incomingData = message.data;
+          setTranslationsData(currentData => {
+            const nextData: TranslationData[] = [];
+            const newDisks = incomingData.translations;
+            const oldDisks = lastKnownDiskData.current;
+
+            // Update existing or new incoming keys
+            for (const key of Object.keys(newDisks)) {
+              const incomingLangs = newDisks[key];
+              const oldLangs = oldDisks[key] || {};
+              const existingRow = currentData.find(r => r.key === key);
+              const newRow = existingRow 
+                ? { ...existingRow, translations: { ...existingRow.translations } } 
+                : { key, translations: {} };
+
+              for (const lang of incomingData.languages) {
+                const newVal = incomingLangs[lang] || '';
+                const oldVal = oldLangs[lang] || '';
+                const userVal = existingRow ? (existingRow.translations[lang] || '') : '';
+
+                if (newVal !== oldVal) {
+                  // Disk was manually changed, precedence to disk
+                  newRow.translations[lang] = newVal;
+                } else if (!existingRow) {
+                  newRow.translations[lang] = newVal;
+                } else {
+                  // Disk not manually changed, keep user's active version (which might include unsaved changes)
+                  newRow.translations[lang] = userVal;
+                }
+              }
+              nextData.push(newRow);
+            }
+
+            // Keep user's newly created rows that aren't on disk at all
+            currentData.forEach(row => {
+              if (row.key.startsWith('__new_row_') || (!newDisks[row.key] && !row.key.startsWith('__new_row_'))) {
+                if (!nextData.find(r => r.key === row.key)) {
+                  nextData.push(row);
+                }
+              }
+            });
+
+            // Critical Fix: Sync the reference inside the state updater to prevent race conditions 
+            // when rapid file-watcher events queue multiple batched state updates.
+            lastKnownDiskData.current = incomingData.translations;
+
+            return nextData;
+          });
+          setSyncAvailable(false);
           break;
         }
         case 'load-error':
@@ -66,6 +124,20 @@ export function useTranslationEditor() {
           break;
         case 'save-success':
           setHasUnsavedChanges(false);
+          setSyncAvailable(false); // Just saved what we had
+          
+          // Also update our `lastKnownDiskData` to reflect what we just saved 
+          // so future syncs compare against the newly saved disk state
+          const translationsMapForExtension: { [key: string]: { [lang: string]: string } } = {};
+          setTranslationsData(currentData => {
+            currentData.forEach(item => {
+              if (!item.key.startsWith('__new_row_')) {
+                translationsMapForExtension[item.key] = item.translations;
+              }
+            });
+            lastKnownDiskData.current = translationsMapForExtension;
+            return currentData;
+          });
           break;
         default:
           break;
@@ -235,6 +307,10 @@ export function useTranslationEditor() {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  const handleRequestSync = () => {
+    getVscode().postMessage({ command: 'request-sync' });
+  };
+
   const filteredAndSortedData = useMemo(() => {
     let processData = [...translationsData];
 
@@ -286,13 +362,13 @@ export function useTranslationEditor() {
     languages, translationsData, spellCheckers, editingCell, hasUnsavedChanges,
     sortConfig, filterText, setFilterText, missingFilter, setMissingFilter,
     hoverRow, setHoverRow, isLoading, errorMsg, metadataMap, editingPlaceholder,
-    setEditingPlaceholder, columnWidths, filteredAndSortedData,
+    setEditingPlaceholder, columnWidths, filteredAndSortedData, syncAvailable,
     // Refs
     dragItem, dragOverItem,
     // Handlers
     handleAcceptChange, handleDiscardChange, handleCellClick,
     handleAddRowMiddle, handleDeleteRow, handleGhostCellClick,
     handlePlaceholderClick, handleSavePlaceholder, handleSaveChanges,
-    handleDragSort, requestSort, handleResizeStart,
+    handleDragSort, requestSort, handleResizeStart, handleRequestSync,
   };
 }

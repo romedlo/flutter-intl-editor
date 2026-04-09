@@ -12,7 +12,9 @@ interface ToolbarProps {
   resultCount: number;
   totalCount: number;
   hasUnsavedChanges: boolean;
+  syncAvailable: boolean;
   onSave: () => void;
+  onSync: () => void;
 }
 
 export default function Toolbar({
@@ -25,6 +27,7 @@ export default function Toolbar({
   totalCount,
   hasUnsavedChanges,
   onSave,
+  onSync,
 }: ToolbarProps) {
   const filterInputRef = useRef<HTMLInputElement>(null);
 
@@ -88,20 +91,35 @@ export default function Toolbar({
         )}
       </div>
 
-      <button
-        onClick={onSave}
-        disabled={!hasUnsavedChanges}
-        style={{
-          backgroundColor: hasUnsavedChanges ? 'var(--vscode-button-background)' : 'var(--vscode-button-secondary-background)',
-          color: hasUnsavedChanges ? 'var(--vscode-button-foreground)' : 'var(--vscode-button-secondary-foreground)',
-          border: 'none', padding: '8px 12px',
-          cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed',
-          borderRadius: '3px', whiteSpace: 'nowrap',
-          opacity: hasUnsavedChanges ? 1 : 0.6,
-        }}
-      >
-        Save Changes
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button
+          onClick={onSync}
+          style={{
+            backgroundColor: 'var(--vscode-button-secondary-background)',
+            color: 'var(--vscode-button-secondary-foreground)',
+            border: 'none', padding: '8px 12px',
+            cursor: 'pointer',
+            borderRadius: '3px', whiteSpace: 'nowrap',
+          }}
+          title="Force sync from disk"
+        >
+          🔄 Sync Files
+        </button>
+        <button
+          onClick={onSave}
+          disabled={!hasUnsavedChanges}
+          style={{
+            backgroundColor: hasUnsavedChanges ? 'var(--vscode-button-background)' : 'var(--vscode-button-secondary-background)',
+            color: hasUnsavedChanges ? 'var(--vscode-button-foreground)' : 'var(--vscode-button-secondary-foreground)',
+            border: 'none', padding: '8px 12px',
+            cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed',
+            borderRadius: '3px', whiteSpace: 'nowrap',
+            opacity: hasUnsavedChanges ? 1 : 0.6,
+          }}
+        >
+          Save Changes
+        </button>
+      </div>
     </div>
   );
 }

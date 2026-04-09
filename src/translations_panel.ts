@@ -15,6 +15,7 @@ class TranslationsPanel {
     private _disposables: vscode.Disposable[] = [];
 
     private readonly translationsService: TranslationsService;
+    private _isSaving = false;
 
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
         this._panel = panel;
@@ -24,6 +25,12 @@ class TranslationsPanel {
         this._update(); // Set initial HTML
 
         this._loadAndSendTranslations();
+        
+        const watcher = vscode.workspace.createFileSystemWatcher('**/*.arb');
+        watcher.onDidChange(() => this._onArbFilesChangedEvent());
+        watcher.onDidCreate(() => this._onArbFilesChangedEvent());
+        watcher.onDidDelete(() => this._onArbFilesChangedEvent());
+        this._disposables.push(watcher);
 
         this._panel.onDidDispose(() => this._dispose(), null, this._disposables);
 
@@ -32,6 +39,9 @@ class TranslationsPanel {
                 switch (message.command) {
                     case 'reload':
                         this._loadAndSendTranslations();
+                        break;
+                    case 'request-sync':
+                        this._loadAndSendTranslations(true);
                         break;
                     case 'unsaved-changes':
                         this._panel.title = message.data ? 'Flutter Intl •' : 'Flutter Intl';
@@ -66,9 +76,12 @@ class TranslationsPanel {
                         }
 
                         try {
+                            this._isSaving = true;
                             await this.translationsService.saveAllTranslations(translationsMapForService, metadataMapForService);
                             this._panel.webview.postMessage({ command: 'save-success' });
                             vscode.window.showInformationMessage('Translations saved successfully!'); // Show info in VS Code
+                            
+                            setTimeout(() => { this._isSaving = false; }, 1000);
                             
                             // Automatically run flutter pub get to regenerate dart models
                             const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -83,6 +96,7 @@ class TranslationsPanel {
                                 });
                             }
                         } catch (error: any) {
+                            this._isSaving = false;
                             this._panel.webview.postMessage({ command: 'save-error' });
                             vscode.window.showErrorMessage(`Failed to save translations: ${error.message}`); // Show error in VS Code
                         }
@@ -98,7 +112,13 @@ class TranslationsPanel {
         );
     }
 
-    private _loadAndSendTranslations() {
+    private _onArbFilesChangedEvent() {
+        if (this._isSaving) return;
+        // Auto-sync behind the scenes
+        this._loadAndSendTranslations(true);
+    }
+
+    private _loadAndSendTranslations(isSync = false) {
         this.translationsService.createTranslationsMap().then(() => {
             const translations = this.translationsService.translationsMap;
             const serializableTranslations: { [key: string]: { [lang: string]: string } } = {};
@@ -113,7 +133,7 @@ class TranslationsPanel {
             });
 
             this._panel.webview.postMessage({
-                command: 'initial-data',
+                command: isSync ? 'sync-data' : 'initial-data',
                 data: {
                     languages: Array.from(this.translationsService.allLanguages),
                     translations: serializableTranslations,

@@ -22,6 +22,7 @@ function App() {
     handleAddRowMiddle, handleDeleteRow, handleGhostCellClick,
     handlePlaceholderClick, handleSavePlaceholder, handleSaveChanges,
     handleDragSort, requestSort, handleResizeStart,
+    syncAvailable, handleRequestSync,
   } = useTranslationEditor();
 
   // --- Loading / Error / Empty states ---
@@ -90,7 +91,9 @@ function App() {
         resultCount={filteredAndSortedData.length}
         totalCount={translationsData.filter(r => !r.key.startsWith('__new')).length}
         hasUnsavedChanges={hasUnsavedChanges}
+        syncAvailable={syncAvailable}
         onSave={handleSaveChanges}
+        onSync={handleRequestSync}
       />
 
       <TranslationTable
