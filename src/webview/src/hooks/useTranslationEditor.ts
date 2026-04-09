@@ -15,6 +15,43 @@ export function useTranslationEditor() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [syncAvailable, setSyncAvailable] = useState(false);
   const lastKnownDiskData = useRef<{ [key: string]: { [lang: string]: string } }>({});
+  
+  // History tracking for Undo/Redo
+  const historyRef = useRef<TranslationData[][]>([]);
+  const historyIndexRef = useRef<number>(-1);
+
+  const pushHistory = (data: TranslationData[]) => {
+    const newHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
+    newHistory.push(data);
+    if (newHistory.length > 50) newHistory.shift();
+    historyRef.current = newHistory;
+    historyIndexRef.current = newHistory.length - 1;
+  };
+
+  const updateTranslations = (updater: TranslationData[] | ((prev: TranslationData[]) => TranslationData[])) => {
+    setTranslationsData(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (next !== prev) pushHistory(next);
+      return next;
+    });
+  };
+
+  const handleUndo = () => {
+    if (historyIndexRef.current > 0) {
+      historyIndexRef.current -= 1;
+      setTranslationsData(historyRef.current[historyIndexRef.current]);
+      setHasUnsavedChanges(true); // Reverting is considered an unsaved action
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      historyIndexRef.current += 1;
+      setTranslationsData(historyRef.current[historyIndexRef.current]);
+      setHasUnsavedChanges(true);
+    }
+  };
+
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [filterText, setFilterText] = useState('');
   const [missingFilter, setMissingFilter] = useState('all');
@@ -59,6 +96,8 @@ export function useTranslationEditor() {
             translations: translations as { [lang: string]: string },
           }));
           setTranslationsData(translationsArray);
+          historyRef.current = [translationsArray];
+          historyIndexRef.current = 0;
           lastKnownDiskData.current = receivedData.translations;
           setMetadataMap(receivedData.metadata || {});
           setIsLoading(false);
@@ -70,7 +109,7 @@ export function useTranslationEditor() {
           break;
         case 'sync-data': {
           const incomingData = message.data;
-          setTranslationsData(currentData => {
+          updateTranslations(currentData => {
             const nextData: TranslationData[] = [];
             const newDisks = incomingData.translations;
             const oldDisks = lastKnownDiskData.current;
@@ -152,6 +191,17 @@ export function useTranslationEditor() {
   // Keyboard shortcuts: Cmd+F focuses filter, Cmd+S saves
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore global shortcuts if user is typing in dialog to prevent intercepting native text undo
+      if (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT') return;
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         document.getElementById('filter-input')?.focus();
@@ -183,7 +233,7 @@ export function useTranslationEditor() {
           getVscode().postMessage({ command: 'alert', text: `Key "${trimmedNewValue}" already exists.` });
           return;
         }
-        setTranslationsData(prevData => {
+        updateTranslations(prevData => {
           const newData = prevData.map(item => item.key === key ? { ...item, key: trimmedNewValue } : item);
           setHasUnsavedChanges(true);
           return newData;
@@ -196,7 +246,7 @@ export function useTranslationEditor() {
       }
       nextRowKey = trimmedNewValue;
     } else {
-      setTranslationsData(prevData => {
+      updateTranslations(prevData => {
         const newData = prevData.map(item =>
           item.key === key ? { ...item, translations: { ...item.translations, [lang]: newValue } } : item
         );
@@ -271,7 +321,7 @@ export function useTranslationEditor() {
     const newKeyId = `__new_row_${Date.now()}`;
     const newTranslations: { [lang: string]: string } = {};
     languages.forEach(lang => { newTranslations[lang] = ''; });
-    setTranslationsData(prev => {
+    updateTranslations(prev => {
       const next = [...prev];
       // Find the true position in raw data (not the sorted view index)
       const rawIndex = next.findIndex(item => item.key === afterKey);
@@ -280,10 +330,23 @@ export function useTranslationEditor() {
       return next;
     });
     setHasUnsavedChanges(true);
+
+    setTimeout(() => {
+      const tdEl = document.getElementById(`cell-${newKeyId}-_key_`);
+      if (tdEl) {
+        tdEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+        setEditingCell({
+          key: newKeyId,
+          lang: '_key_',
+          value: '',
+          rect: tdEl.getBoundingClientRect(),
+        });
+      }
+    }, 0);
   };
 
   const handleDeleteRow = (key: string) => {
-    setTranslationsData(prev => {
+    updateTranslations(prev => {
       const rawIndex = prev.findIndex(item => item.key === key);
       if (rawIndex === -1) return prev;
       const next = [...prev];
@@ -298,7 +361,7 @@ export function useTranslationEditor() {
     const newKeyId = `__new_row_${Date.now()}`;
     const newTranslations: { [lang: string]: string } = {};
     languages.forEach(lang => { newTranslations[lang] = ''; });
-    setTranslationsData(prev => [...prev, { key: newKeyId, translations: newTranslations }]);
+    updateTranslations(prev => [...prev, { key: newKeyId, translations: newTranslations }]);
     setHasUnsavedChanges(true);
     setEditingCell({ key: newKeyId, lang: langToEdit, value: '', rect });
   };
